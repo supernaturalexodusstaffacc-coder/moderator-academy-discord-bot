@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import pg from "pg";
 import {
   ChannelType,
   Client,
@@ -21,6 +22,23 @@ const auditChannelId = process.env.ACADEMY_AUDIT_CHANNEL_ID;
 const staffRoleIds = new Set((process.env.ACADEMY_STAFF_ROLE_IDS || "").split(",").map((id) => id.trim()).filter(Boolean));
 const commands = [];
 let nextCommandId = 1;
+const pool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.env.DATABASE_URL }) : null;
+
+async function initializeDatabase() {
+  if (!pool) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS academy_profiles (
+      user_id BIGINT PRIMARY KEY,
+      username TEXT NOT NULL,
+      rank_name TEXT NOT NULL,
+      score INTEGER NOT NULL DEFAULT 0,
+      xp INTEGER NOT NULL DEFAULT 0,
+      progress INTEGER NOT NULL DEFAULT 0,
+      completed_modules INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
 
 const commandDefinitions = [
   new SlashCommandBuilder().setName("academy-status").setDescription("Check the Discord to Roblox command bridge."),
@@ -83,6 +101,7 @@ client.once(Events.ClientReady, async (readyClient) => {
     ? Routes.applicationGuildCommands(applicationId, guildId)
     : Routes.applicationCommands(applicationId);
   await rest.put(registrationRoute, { body: commandDefinitions });
+  await initializeDatabase();
   console.log(`Discord bot ready as ${readyClient.user.tag}`);
   await writeAudit(readyClient, "Academy Bot Online", "The Discord command bridge is ready.", 0x57f287);
 });
@@ -101,8 +120,42 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   const username = interaction.options.getString("username", true).trim();
+  if (interaction.commandName === "view-progress") {
+    if (!pool) {
+      await interaction.reply({ content: "Offline profiles are not configured yet. Add DATABASE_URL to this Railway service.", ephemeral: true });
+      return;
+    }
+
+    const result = await pool.query(
+      "SELECT * FROM academy_profiles WHERE LOWER(username) = LOWER($1) ORDER BY updated_at DESC LIMIT 1",
+      [username],
+    );
+    const profile = result.rows[0];
+    if (!profile) {
+      await interaction.reply({ content: `No saved Academy profile was found for **${username}** yet. They must join the updated game once.`, ephemeral: true });
+      return;
+    }
+
+    const updatedAt = Math.floor(new Date(profile.updated_at).getTime() / 1000);
+    await interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0x9b59ff)
+        .setTitle(`${profile.username} - Academy Progress`)
+        .addFields(
+          { name: "Rank", value: profile.rank_name, inline: true },
+          { name: "Progress", value: `${profile.progress}%`, inline: true },
+          { name: "XP", value: String(profile.xp), inline: true },
+          { name: "Score", value: String(profile.score), inline: true },
+          { name: "Completed Modules", value: `${profile.completed_modules}/4`, inline: true },
+          { name: "Last Synced", value: `<t:${updatedAt}:R>`, inline: true },
+        )
+        .setFooter({ text: "Moderator Academy Offline Profiles" })],
+      ephemeral: true,
+    });
+    return;
+  }
+
   const actionByName = {
-    "view-progress": "ViewProgress",
     promote: "PromotePlayer",
     "reset-progress": "ResetProgress",
     "skip-module": "SkipModule",
@@ -130,6 +183,34 @@ app.get("/roblox/commands", verifyRoblox, (_req, res) => {
   // A command is removed only once a live Roblox server has collected it.
   const batch = commands.splice(0, 10);
   res.json({ commands: batch });
+});
+
+app.post("/roblox/profile", verifyRoblox, async (req, res) => {
+  if (!pool) {
+    res.status(503).json({ error: "Database is not configured" });
+    return;
+  }
+
+  const profile = req.body;
+  if (!Number.isInteger(profile?.userId) || typeof profile?.username !== "string") {
+    res.status(400).json({ error: "Invalid profile payload" });
+    return;
+  }
+
+  await pool.query(
+    `INSERT INTO academy_profiles (user_id, username, rank_name, score, xp, progress, completed_modules, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT (user_id) DO UPDATE SET
+       username = EXCLUDED.username,
+       rank_name = EXCLUDED.rank_name,
+       score = EXCLUDED.score,
+       xp = EXCLUDED.xp,
+       progress = EXCLUDED.progress,
+       completed_modules = EXCLUDED.completed_modules,
+       updated_at = NOW()`,
+    [profile.userId, profile.username, profile.rankName || "Trainee", profile.score || 0, profile.xp || 0, profile.progress || 0, profile.completedModules || 0],
+  );
+  res.json({ ok: true });
 });
 
 app.post("/roblox/results", verifyRoblox, async (req, res) => {
