@@ -105,7 +105,7 @@ const app = express();
 app.use(express.json({ limit: "100kb" }));
 
 function verifyRoblox(req, res, next) {
-  if (req.get("x-academy-secret") !== process.env.ACADEMY_SHARED_SECRET) {
+  if (req.get("x-api-key") !== process.env.ACADEMY_SHARED_SECRET) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
