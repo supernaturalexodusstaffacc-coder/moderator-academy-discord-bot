@@ -73,7 +73,10 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once(Events.ClientReady, async (readyClient) => {
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
-  await rest.put(Routes.applicationCommands(process.env.DISCORD_APPLICATION_ID), { body: commandDefinitions });
+  const registrationRoute = process.env.DISCORD_GUILD_ID
+    ? Routes.applicationGuildCommands(process.env.DISCORD_APPLICATION_ID, process.env.DISCORD_GUILD_ID)
+    : Routes.applicationCommands(process.env.DISCORD_APPLICATION_ID);
+  await rest.put(registrationRoute, { body: commandDefinitions });
   console.log(`Discord bot ready as ${readyClient.user.tag}`);
   await writeAudit(readyClient, "Academy Bot Online", "The Discord command bridge is ready.", 0x57f287);
 });
