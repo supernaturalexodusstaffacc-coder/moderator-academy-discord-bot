@@ -42,8 +42,9 @@ async function initializeDatabase() {
 
 const commandDefinitions = [
   new SlashCommandBuilder().setName("academy-status").setDescription("Check the Discord to Roblox command bridge."),
-  new SlashCommandBuilder().setName("view-progress").setDescription("View an online trainee's current academy progress.")
+  new SlashCommandBuilder().setName("view-progress").setDescription("View a trainee's saved academy progress.")
     .addStringOption((option) => option.setName("username").setDescription("Exact Roblox username").setRequired(true)),
+  new SlashCommandBuilder().setName("leaderboard").setDescription("Show Trial Moderators closest to becoming Moderator."),
   new SlashCommandBuilder().setName("promote").setDescription("Promote an online trainee by one academy rank.")
     .addStringOption((option) => option.setName("username").setDescription("Exact Roblox username").setRequired(true)),
   new SlashCommandBuilder().setName("reset-progress").setDescription("Reset an online trainee's academy progress.")
@@ -116,6 +117,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (interaction.commandName === "academy-status") {
     await interaction.reply({ content: `Bridge online. ${commands.length} command(s) waiting for a live Roblox server.`, ephemeral: true });
+    return;
+  }
+
+  if (interaction.commandName === "leaderboard") {
+    if (!pool) {
+      await interaction.reply({ content: "Offline profiles are not configured yet.", ephemeral: true });
+      return;
+    }
+    const result = await pool.query(
+      "SELECT username, progress, xp, score, completed_modules FROM academy_profiles WHERE rank_name = 'Trial Moderator' ORDER BY progress DESC, completed_modules DESC, xp DESC, score DESC LIMIT 10",
+    );
+    const lines = result.rows.map((profile, index) => `${index + 1}. **${profile.username}** - ${profile.progress}% | ${profile.completed_modules}/4 modules | ${profile.xp} XP`);
+    await interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0x9b59ff)
+        .setTitle("Closest To Moderator")
+        .setDescription(lines.length ? lines.join("\n") : "No Trial Moderator profiles have synced yet.")
+        .setFooter({ text: "Sorted by core course progress, modules, XP, then score." })],
+      ephemeral: true,
+    });
     return;
   }
 
