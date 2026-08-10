@@ -24,6 +24,8 @@ let nextCommandId = 1;
 
 const commandDefinitions = [
   new SlashCommandBuilder().setName("academy-status").setDescription("Check the Discord to Roblox command bridge."),
+  new SlashCommandBuilder().setName("view-progress").setDescription("View an online trainee's current academy progress.")
+    .addStringOption((option) => option.setName("username").setDescription("Exact Roblox username").setRequired(true)),
   new SlashCommandBuilder().setName("promote").setDescription("Promote an online trainee by one academy rank.")
     .addStringOption((option) => option.setName("username").setDescription("Exact Roblox username").setRequired(true)),
   new SlashCommandBuilder().setName("reset-progress").setDescription("Reset an online trainee's academy progress.")
@@ -91,6 +93,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   const username = interaction.options.getString("username", true).trim();
   const actionByName = {
+    "view-progress": "ViewProgress",
     promote: "PromotePlayer",
     "reset-progress": "ResetProgress",
     "skip-module": "SkipModule",
