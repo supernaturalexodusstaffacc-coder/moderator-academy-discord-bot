@@ -73,9 +73,15 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once(Events.ClientReady, async (readyClient) => {
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
-  const registrationRoute = process.env.DISCORD_GUILD_ID
-    ? Routes.applicationGuildCommands(process.env.DISCORD_APPLICATION_ID, process.env.DISCORD_GUILD_ID)
-    : Routes.applicationCommands(process.env.DISCORD_APPLICATION_ID);
+  const applicationId = process.env.DISCORD_APPLICATION_ID;
+  const guildId = process.env.DISCORD_GUILD_ID;
+  if (guildId) {
+    // Remove the previous global registration so Discord does not show duplicates.
+    await rest.put(Routes.applicationCommands(applicationId), { body: [] });
+  }
+  const registrationRoute = guildId
+    ? Routes.applicationGuildCommands(applicationId, guildId)
+    : Routes.applicationCommands(applicationId);
   await rest.put(registrationRoute, { body: commandDefinitions });
   console.log(`Discord bot ready as ${readyClient.user.tag}`);
   await writeAudit(readyClient, "Academy Bot Online", "The Discord command bridge is ready.", 0x57f287);
